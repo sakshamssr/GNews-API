@@ -36,6 +36,10 @@ app = FastAPI()
 async def root(inpu:str):
     return scrape(inpu)
 
+@app.get("/news/")
+async def root():
+    return {"Message":"Pleaase specify a search query."}
+
 @app.get("/")
 async def root():
     return {"Message":"Hello From SSR!"},{"Correct Way":r"http://127.0.0.1:8000/news/{query}"}
