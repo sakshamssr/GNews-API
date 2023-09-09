@@ -38,11 +38,11 @@ async def root(inpu:str):
 
 @app.get("/news/")
 async def root():
-    return {"Message":"Pleaase specify a search query."}
+    return {"Message": "Please specify a search query."}
 
 @app.get("/")
 async def root():
-    return {"Message":"Hello From SSR!"},{"Correct Way":r"http://127.0.0.1:8000/news/{query}"}
+    return {"Message":"Hello From SSR!"},{"Correct Way":r"https://gnewssapi.vercel.app/news/{query}"}
 
 if __name__ == "__main__":
     uvicorn.run("GNews_scrape:app", host="0.0.0.0", port=8000, reload=True)
