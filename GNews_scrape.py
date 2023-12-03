@@ -6,29 +6,28 @@ from fastapi import FastAPI
 
 def scrape(inp):
     l=[]
-    n=[]
-    nl={}
+    store={}
 
     URL = "https://news.google.com/search?q="+inp
     page = requests.get(URL)
     soup = BeautifulSoup(page.content, "html.parser")
-    name = soup.find_all(class_="DY5T1d RZIKme")
-    time=soup.find_all(class_="WW6dff uQIVzc Sksgp slhocf")
+    name = soup.find_all(class_="JtKRv")
+    image=soup.find_all(class_="K0q4G")
+    time=soup.find_all(class_="hvbAAd")
+    link=soup.find_all(class_="WwrzSb")
 
-    for abc in range(0,11):
-        c=str(name[abc]).split('" target="_blank">')
-        r1=c[1].replace("</a>","")
-        datetime=str(time[abc]).split('<time class="WW6dff uQIVzc Sksgp slhocf" datetime="')
-        datetime2=datetime[1].split('">')
-        r2=c[0].replace('<a class="DY5T1d RZIKme" href="',"")
-        n.append(r1)
-        l.append(r2)
-        id_=r2.split('./articles/')
-        link = ("https://news.google.com/"+r2)
-        id2=id_[1].replace("?hl=en-IN&amp;gl=IN&amp;ceid=IN%3Aen","")
-        nl[id2]={"title":r1,"updated_on":{"time":datetime2[0].split("T")[1].replace('Z',''),"date":datetime2[0].split("T")[0]},"link":link}
-        
-    return nl
+    for i in range(0,len(name)):
+        try:
+            title=str(name[i]).split('tabindex="0">')[1].split("</h4>")[0]
+            imagelink=str(image[i]).split('src="')[1].split('" src')[0]
+            upload=time[i].text
+            articleLink=str(link[i]).split('href="')[1].split('" jslog')[0]
+            store[i]={"title":title,"image":imagelink,"uploadTime":upload,"articlelink":articleLink}
+        except:
+            print("That's Enough!")
+            break
+    
+    return store
 
 app = FastAPI()
 
@@ -41,7 +40,7 @@ async def root():
     return {"Message":"Pleaase specify a search query."}
 @app.get("/")
 async def root():
-    return {"Message":"Hello From SSR!"},{"Correct Way":r"http://127.0.0.1:8000/news/{query}"}
+    return {"Message":"Hello From SSR!"},{"Correct Way":r"https://gnewssapi.vercel.app/news/{query}"}
 
 if __name__ == "__main__":
-    uvicorn.run("GNews_scrape:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("GNews_scrape:app", host="0.0.0.0", port=4000, reload=True)
