@@ -37,12 +37,7 @@ async def root(inpu:str):
 
 @app.get("/news/")
 async def root():
-<<<<<<< HEAD
     return {"Message":"Pleaase specify a search query."}
-=======
-    return {"Message": "Please specify a search query."}
-
->>>>>>> 0ee1a057c4aea8cb61415c399be3862d73be09e4
 @app.get("/")
 async def root():
     return {"Message":"Hello From SSR!"},{"Correct Way":r"https://gnewssapi.vercel.app/news/{query}"}
