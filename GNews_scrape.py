@@ -4,7 +4,7 @@ from bs4 import BeautifulSoup
 import uvicorn
 from fastapi import FastAPI
 
-def scrape(inp):
+def scrape(query):
     l=[]
     store={}
 
