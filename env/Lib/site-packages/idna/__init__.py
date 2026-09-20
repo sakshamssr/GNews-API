@@ -1,4 +1,3 @@
-from .package_data import __version__
 from .core import (
     IDNABidiError,
     IDNAError,
@@ -19,9 +18,13 @@ from .core import (
     valid_label_length,
     valid_string_length,
 )
+from .idnadata import __version__ as unicode_version
 from .intranges import intranges_contain
+from .package_data import __version__
 
 __all__ = [
+    "__version__",
+    "unicode_version",
     "IDNABidiError",
     "IDNAError",
     "InvalidCodepoint",

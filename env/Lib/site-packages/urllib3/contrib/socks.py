@@ -41,7 +41,7 @@ with the proxy:
 from __future__ import annotations
 
 try:
-    import socks  # type: ignore[import]
+    import socks
 except ImportError:
     import warnings
 
@@ -51,7 +51,7 @@ except ImportError:
         (
             "SOCKS support in urllib3 requires the installation of optional "
             "dependencies: specifically, PySocks.  For more information, see "
-            "https://urllib3.readthedocs.io/en/latest/contrib.html#socks-proxies"
+            "https://urllib3.readthedocs.io/en/latest/advanced-usage.html#socks-proxies"
         ),
         DependencyWarning,
     )
@@ -71,19 +71,14 @@ try:
 except ImportError:
     ssl = None  # type: ignore[assignment]
 
-try:
-    from typing import TypedDict
 
-    class _TYPE_SOCKS_OPTIONS(TypedDict):
-        socks_version: int
-        proxy_host: str | None
-        proxy_port: str | None
-        username: str | None
-        password: str | None
-        rdns: bool
-
-except ImportError:  # Python 3.7
-    _TYPE_SOCKS_OPTIONS = typing.Dict[str, typing.Any]  # type: ignore[misc, assignment]
+class _TYPE_SOCKS_OPTIONS(typing.TypedDict):
+    socks_version: int
+    proxy_host: str | None
+    proxy_port: str | None
+    username: str | None
+    password: str | None
+    rdns: bool
 
 
 class SOCKSConnection(HTTPConnection):
@@ -116,11 +111,11 @@ class SOCKSConnection(HTTPConnection):
                 (self.host, self.port),
                 proxy_type=self._socks_options["socks_version"],
                 proxy_addr=self._socks_options["proxy_host"],
-                proxy_port=self._socks_options["proxy_port"],
+                proxy_port=self._socks_options["proxy_port"],  # type: ignore[arg-type]
                 proxy_username=self._socks_options["username"],
                 proxy_password=self._socks_options["password"],
                 proxy_rdns=self._socks_options["rdns"],
-                timeout=self.timeout,
+                timeout=self.timeout,  # type: ignore[arg-type]
                 **extra_kw,
             )
 
@@ -146,7 +141,7 @@ class SOCKSConnection(HTTPConnection):
                     raise NewConnectionError(
                         self, f"Failed to establish a new connection: {error}"
                     )
-            else:
+            else:  # Defensive: see https://github.com/urllib3/urllib3/pull/3728#pullrequestreview-3816302703
                 raise NewConnectionError(
                     self, f"Failed to establish a new connection: {e}"
                 ) from e
@@ -197,10 +192,8 @@ class SOCKSProxyManager(PoolManager):
     ):
         parsed = parse_url(proxy_url)
 
-        if username is None and password is None and parsed.auth is not None:
-            split = parsed.auth.split(":")
-            if len(split) == 2:
-                username, password = split
+        if username is None and password is None:
+            username, password = parsed.auth_decoded
         if parsed.scheme == "socks5":
             socks_version = socks.PROXY_TYPE_SOCKS5
             rdns = False

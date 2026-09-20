@@ -28,10 +28,10 @@ from typing import (
 from uuid import UUID
 from weakref import WeakSet
 
-from . import errors
-from .datetime_parse import parse_date
-from .utils import import_string, update_not_none
-from .validators import (
+from pydantic.v1 import errors
+from pydantic.v1.datetime_parse import parse_date
+from pydantic.v1.utils import import_string, update_not_none
+from pydantic.v1.validators import (
     bytes_validator,
     constr_length_validator,
     constr_lower,
@@ -123,9 +123,9 @@ StrIntFloat = Union[str, int, float]
 if TYPE_CHECKING:
     from typing_extensions import Annotated
 
-    from .dataclasses import Dataclass
-    from .main import BaseModel
-    from .typing import CallableGenerator
+    from pydantic.v1.dataclasses import Dataclass
+    from pydantic.v1.main import BaseModel
+    from pydantic.v1.typing import CallableGenerator
 
     ModelOrDc = Type[Union[BaseModel, Dataclass]]
 
@@ -481,6 +481,7 @@ else:
 
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ SET TYPES ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
+
 # This types superclass should be Set[T], but cython chokes on that...
 class ConstrainedSet(set):  # type: ignore
     # Needed for pydantic to detect that this is a set
@@ -568,6 +569,7 @@ def confrozenset(
 
 
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ LIST TYPES ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
 
 # This types superclass should be List[T], but cython chokes on that...
 class ConstrainedList(list):  # type: ignore
@@ -827,7 +829,7 @@ class JsonWrapper:
 class JsonMeta(type):
     def __getitem__(self, t: Type[Any]) -> Type[JsonWrapper]:
         if t is Any:
-            return Json  # allow Json[Any] to replecate plain Json
+            return Json  # allow Json[Any] to replicate plain Json
         return _registered(type('JsonWrapperValue', (JsonWrapper,), {'inner_type': t}))
 
 
@@ -1094,7 +1096,6 @@ class ByteSize(int):
 
     @classmethod
     def validate(cls, v: StrIntFloat) -> 'ByteSize':
-
         try:
             return cls(int(v))
         except ValueError:
@@ -1116,7 +1117,6 @@ class ByteSize(int):
         return cls(int(float(scalar) * unit_mult))
 
     def human_readable(self, decimal: bool = False) -> str:
-
         if decimal:
             divisor = 1000
             units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB']
@@ -1135,7 +1135,6 @@ class ByteSize(int):
         return f'{num:0.1f}{final_unit}'
 
     def to(self, unit: str) -> float:
-
         try:
             unit_div = BYTE_SIZES[unit.lower()]
         except KeyError:

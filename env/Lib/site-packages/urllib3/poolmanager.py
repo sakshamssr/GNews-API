@@ -7,7 +7,7 @@ import warnings
 from types import TracebackType
 from urllib.parse import urljoin
 
-from ._collections import RecentlyUsedContainer
+from ._collections import HTTPHeaderDict, RecentlyUsedContainer
 from ._request_methods import RequestMethods
 from .connection import ProxyConfig
 from .connectionpool import HTTPConnectionPool, HTTPSConnectionPool, port_by_scheme
@@ -27,7 +27,7 @@ from .util.url import Url, parse_url
 if typing.TYPE_CHECKING:
     import ssl
 
-    from typing_extensions import Literal
+    from typing_extensions import Self
 
 __all__ = ["PoolManager", "ProxyManager", "proxy_from_url"]
 
@@ -39,6 +39,7 @@ SSL_KEYWORDS = (
     "cert_file",
     "cert_reqs",
     "ca_certs",
+    "ca_cert_data",
     "ssl_version",
     "ssl_minimum_version",
     "ssl_maximum_version",
@@ -46,12 +47,12 @@ SSL_KEYWORDS = (
     "ssl_context",
     "key_password",
     "server_hostname",
+    "assert_hostname",
+    "assert_fingerprint",
 )
 # Default value for `blocksize` - a new parameter introduced to
 # http.client.HTTPConnection & http.client.HTTPSConnection in Python 3.7
 _DEFAULT_BLOCKSIZE = 16384
-
-_SelfT = typing.TypeVar("_SelfT")
 
 
 class PoolKey(typing.NamedTuple):
@@ -74,6 +75,7 @@ class PoolKey(typing.NamedTuple):
     key_cert_file: str | None
     key_cert_reqs: str | None
     key_ca_certs: str | None
+    key_ca_cert_data: str | bytes | None
     key_ssl_version: int | str | None
     key_ssl_minimum_version: ssl.TLSVersion | None
     key_ssl_maximum_version: ssl.TLSVersion | None
@@ -203,6 +205,20 @@ class PoolManager(RequestMethods):
         **connection_pool_kw: typing.Any,
     ) -> None:
         super().__init__(headers)
+        # PoolManager handles redirects itself in PoolManager.urlopen().
+        # It always passes redirect=False to the underlying connection pool to
+        # suppress per-pool redirect handling. If the user supplied a non-Retry
+        # value (int/bool/etc) for retries and we let the pool normalize it
+        # while redirect=False, the resulting Retry object would have redirect
+        # handling disabled, which can interfere with PoolManager's own
+        # redirect logic. Normalize here so redirects remain governed solely by
+        # PoolManager logic.
+        if "retries" in connection_pool_kw:
+            retries = connection_pool_kw["retries"]
+            if not isinstance(retries, Retry):
+                retries = Retry.from_int(retries)
+                connection_pool_kw = connection_pool_kw.copy()
+                connection_pool_kw["retries"] = retries
         self.connection_pool_kw = connection_pool_kw
 
         self.pools: RecentlyUsedContainer[PoolKey, HTTPConnectionPool]
@@ -213,7 +229,7 @@ class PoolManager(RequestMethods):
         self.pool_classes_by_scheme = pool_classes_by_scheme
         self.key_fn_by_scheme = key_fn_by_scheme.copy()
 
-    def __enter__(self: _SelfT) -> _SelfT:
+    def __enter__(self) -> Self:
         return self
 
     def __exit__(
@@ -221,7 +237,7 @@ class PoolManager(RequestMethods):
         exc_type: type[BaseException] | None,
         exc_val: BaseException | None,
         exc_tb: TracebackType | None,
-    ) -> Literal[False]:
+    ) -> typing.Literal[False]:
         self.clear()
         # Return False to re-raise any potential exceptions
         return False
@@ -295,7 +311,7 @@ class PoolManager(RequestMethods):
 
         request_context = self._merge_pool_kwargs(pool_kwargs)
         request_context["scheme"] = scheme or "http"
-        if not port:
+        if port is None:
             port = port_by_scheme.get(request_context["scheme"].lower(), 80)
         request_context["port"] = port
         request_context["host"] = host
@@ -314,8 +330,8 @@ class PoolManager(RequestMethods):
         if "strict" in request_context:
             warnings.warn(
                 "The 'strict' parameter is no longer needed on Python 3+. "
-                "This will raise an error in urllib3 v2.1.0.",
-                DeprecationWarning,
+                "This will raise an error in urllib3 v3.0.",
+                FutureWarning,
             )
             request_context.pop("strict")
 
@@ -422,10 +438,10 @@ class PoolManager(RequestMethods):
         if u.scheme is None:
             warnings.warn(
                 "URLs without a scheme (ie 'https://') are deprecated and will raise an error "
-                "in a future version of urllib3. To avoid this DeprecationWarning ensure all URLs "
+                "in urllib3 v3.0. To avoid this FutureWarning ensure all URLs "
                 "start with 'https://' or 'http://'. Read more in this issue: "
                 "https://github.com/urllib3/urllib3/issues/2920",
-                category=DeprecationWarning,
+                category=FutureWarning,
                 stacklevel=2,
             )
 
@@ -438,7 +454,7 @@ class PoolManager(RequestMethods):
             kw["headers"] = self.headers
 
         if self._proxy_requires_url_absolute_form(u):
-            response = conn.urlopen(method, url, **kw)
+            response = conn.urlopen(method, u._replace(fragment=None).url, **kw)
         else:
             response = conn.urlopen(method, u.request_uri, **kw)
 
@@ -449,11 +465,19 @@ class PoolManager(RequestMethods):
         # Support relative URLs for redirecting.
         redirect_location = urljoin(url, redirect_location)
 
-        # RFC 7231, Section 6.4.4
         if response.status == 303:
+            # Change the method according to RFC 9110, Section 15.4.4.
             method = "GET"
+            # And lose the body not to transfer anything sensitive.
+            kw["body"] = None
+            # The body is gone, so the state that describes it has to go too:
+            # there is nothing left to frame with chunked transfer encoding,
+            # and nothing left to rewind.
+            kw["chunked"] = False
+            kw["body_pos"] = None
+            kw["headers"] = HTTPHeaderDict(kw["headers"])._prepare_for_method_change()
 
-        retries = kw.get("retries")
+        retries = kw.get("retries", response.retries)
         if not isinstance(retries, Retry):
             retries = Retry.from_int(retries, redirect=redirect)
 
@@ -527,15 +551,17 @@ class ProxyManager(PoolManager):
 
         proxy = urllib3.ProxyManager("https://localhost:3128/")
 
-        resp1 = proxy.request("GET", "https://google.com/")
-        resp2 = proxy.request("GET", "https://httpbin.org/")
+        resp1 = proxy.request("GET", "http://google.com/")
+        resp2 = proxy.request("GET", "http://httpbin.org/")
 
+        # One pool was shared by both plain HTTP requests.
         print(len(proxy.pools))
         # 1
 
         resp3 = proxy.request("GET", "https://httpbin.org/")
         resp4 = proxy.request("GET", "https://twitter.com/")
 
+        # A separate pool was added for each HTTPS target.
         print(len(proxy.pools))
         # 3
 
@@ -549,7 +575,7 @@ class ProxyManager(PoolManager):
         proxy_headers: typing.Mapping[str, str] | None = None,
         proxy_ssl_context: ssl.SSLContext | None = None,
         use_forwarding_for_https: bool = False,
-        proxy_assert_hostname: None | str | Literal[False] = None,
+        proxy_assert_hostname: None | str | typing.Literal[False] = None,
         proxy_assert_fingerprint: str | None = None,
         **connection_pool_kw: typing.Any,
     ) -> None:
@@ -562,13 +588,30 @@ class ProxyManager(PoolManager):
         if proxy.scheme not in ("http", "https"):
             raise ProxySchemeUnknown(proxy.scheme)
 
-        if not proxy.port:
+        # Keep the deprecated ssl_context fallback on the manager for
+        # compatibility, while passing only explicit proxy policy to connections.
+        self.proxy_ssl_context = proxy_ssl_context
+        if (
+            use_forwarding_for_https
+            and proxy.scheme == "https"
+            and connection_pool_kw.get("ssl_context") is not None
+        ):
+            warnings.warn(
+                "Passing ssl_context when use_forwarding_for_https=True is deprecated "
+                "and will raise an error in urllib3 v3.0. "
+                "Use proxy_ssl_context to configure the TLS connection to the proxy.",
+                FutureWarning,
+                stacklevel=2,
+            )
+            if self.proxy_ssl_context is None:
+                self.proxy_ssl_context = connection_pool_kw.get("ssl_context")
+
+        if proxy.port is None:
             port = port_by_scheme.get(proxy.scheme, 80)
             proxy = proxy._replace(port=port)
 
         self.proxy = proxy
         self.proxy_headers = proxy_headers or {}
-        self.proxy_ssl_context = proxy_ssl_context
         self.proxy_config = ProxyConfig(
             proxy_ssl_context,
             use_forwarding_for_https,

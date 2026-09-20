@@ -1,14 +1,24 @@
+from __future__ import annotations
+
 import asyncio
 import logging
 import signal
 import sys
-from typing import Any, Dict
+import warnings
+from typing import Any
 
 from gunicorn.arbiter import Arbiter
 from gunicorn.workers.base import Worker
 
+from uvicorn._compat import asyncio_run
 from uvicorn.config import Config
-from uvicorn.main import Server
+from uvicorn.server import Server
+
+warnings.warn(
+    "The `uvicorn.workers` module is deprecated. Please use `uvicorn-worker` package instead.\n"
+    "For more details, see https://github.com/Kludex/uvicorn-worker.",
+    DeprecationWarning,
+)
 
 
 class UvicornWorker(Worker):
@@ -17,10 +27,10 @@ class UvicornWorker(Worker):
     rather than a WSGI callable.
     """
 
-    CONFIG_KWARGS: Dict[str, Any] = {"loop": "auto", "http": "auto"}
+    CONFIG_KWARGS: dict[str, Any] = {"loop": "auto", "http": "auto"}
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
-        super(UvicornWorker, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
 
         logger = logging.getLogger("uvicorn.error")
         logger.handlers = self.log.error_log.handlers
@@ -61,14 +71,10 @@ class UvicornWorker(Worker):
 
         self.config = Config(**config_kwargs)
 
-    def init_process(self) -> None:
-        self.config.setup_event_loop()
-        super(UvicornWorker, self).init_process()
-
     def init_signals(self) -> None:
         # Reset signals so Gunicorn doesn't swallow subprocess return codes
         # other signals are set up by Server.install_signal_handlers()
-        # See: https://github.com/encode/uvicorn/issues/894
+        # See: https://github.com/Kludex/uvicorn/issues/894
         for s in self.SIGNALS:
             signal.signal(s, signal.SIG_DFL)
 
@@ -79,7 +85,7 @@ class UvicornWorker(Worker):
     def _install_sigquit_handler(self) -> None:
         """Install a SIGQUIT handler on workers.
 
-        - https://github.com/encode/uvicorn/issues/1116
+        - https://github.com/Kludex/uvicorn/issues/1116
         - https://github.com/benoitc/gunicorn/issues/2604
         """
 
@@ -95,7 +101,7 @@ class UvicornWorker(Worker):
             sys.exit(Arbiter.WORKER_BOOT_ERROR)
 
     def run(self) -> None:
-        return asyncio.run(self._serve())
+        return asyncio_run(self._serve(), loop_factory=self.config.get_loop_factory())
 
     async def callback_notify(self) -> None:
         self.notify()

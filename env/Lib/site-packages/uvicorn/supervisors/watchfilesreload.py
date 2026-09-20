@@ -1,6 +1,8 @@
+from __future__ import annotations
+
+from collections.abc import Callable
 from pathlib import Path
 from socket import socket
-from typing import Callable, List, Optional
 
 from watchfiles import watch
 
@@ -11,20 +13,12 @@ from uvicorn.supervisors.basereload import BaseReload
 class FileFilter:
     def __init__(self, config: Config):
         default_includes = ["*.py"]
-        self.includes = [
-            default
-            for default in default_includes
-            if default not in config.reload_excludes
-        ]
+        self.includes = [default for default in default_includes if default not in config.reload_excludes]
         self.includes.extend(config.reload_includes)
         self.includes = list(set(self.includes))
 
         default_excludes = [".*", ".py[cod]", ".sw.*", "~*"]
-        self.excludes = [
-            default
-            for default in default_excludes
-            if default not in config.reload_includes
-        ]
+        self.excludes = [default for default in default_excludes if default not in config.reload_includes]
         self.exclude_dirs = []
         for e in config.reload_excludes:
             p = Path(e)
@@ -37,19 +31,22 @@ class FileFilter:
             if is_dir:
                 self.exclude_dirs.append(p)
             else:
-                self.excludes.append(e)
+                self.excludes.append(e)  # pragma: full coverage
         self.excludes = list(set(self.excludes))
 
     def __call__(self, path: Path) -> bool:
         for include_pattern in self.includes:
             if path.match(include_pattern):
+                if str(path).endswith(include_pattern):
+                    return True  # pragma: full coverage
+
                 for exclude_dir in self.exclude_dirs:
                     if exclude_dir in path.parents:
                         return False
 
                 for exclude_pattern in self.excludes:
                     if path.match(exclude_pattern):
-                        return False
+                        return False  # pragma: full coverage
 
                 return True
         return False
@@ -59,17 +56,14 @@ class WatchFilesReload(BaseReload):
     def __init__(
         self,
         config: Config,
-        target: Callable[[Optional[List[socket]]], None],
-        sockets: List[socket],
+        target: Callable[[list[socket] | None], None],
+        sockets: list[socket],
     ) -> None:
         super().__init__(config, target, sockets)
         self.reloader_name = "WatchFiles"
-        self.reload_dirs = []
+        self.reload_dirs: list[Path] = []
         for directory in config.reload_dirs:
-            if Path.cwd() not in directory.parents:
-                self.reload_dirs.append(directory)
-        if Path.cwd() not in self.reload_dirs:
-            self.reload_dirs.append(Path.cwd())
+            self.reload_dirs.append(directory)
 
         self.watch_filter = FileFilter(config)
         self.watcher = watch(
@@ -79,9 +73,10 @@ class WatchFilesReload(BaseReload):
             # using yield_on_timeout here mostly to make sure tests don't
             # hang forever, won't affect the class's behavior
             yield_on_timeout=True,
+            ignore_permission_denied=True,
         )
 
-    def should_restart(self) -> Optional[List[Path]]:
+    def should_restart(self) -> list[Path] | None:
         self.pause()
 
         changes = next(self.watcher)

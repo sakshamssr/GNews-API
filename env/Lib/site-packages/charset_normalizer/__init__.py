@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 Charset-Normalizer
 ~~~~~~~~~~~~~~
@@ -16,9 +15,12 @@ Basic usage:
 
 Others methods and usages are available - see the full documentation
 at <https://github.com/Ousret/charset_normalizer>.
-:copyright: (c) 2021 by Ahmed TAHRI
+:copyright: (c) Ahmed TAHRI
 :license: MIT, see LICENSE for more details.
 """
+
+from __future__ import annotations
+
 import logging
 
 from .api import from_bytes, from_fp, from_path, is_binary

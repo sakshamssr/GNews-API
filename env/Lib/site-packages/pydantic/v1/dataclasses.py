@@ -36,21 +36,28 @@ import dataclasses
 import sys
 from contextlib import contextmanager
 from functools import wraps
+
+try:
+    from functools import cached_property
+except ImportError:
+    # cached_property available only for python3.8+
+    pass
+
 from typing import TYPE_CHECKING, Any, Callable, ClassVar, Dict, Generator, Optional, Type, TypeVar, Union, overload
 
 from typing_extensions import dataclass_transform
 
-from .class_validators import gather_all_validators
-from .config import BaseConfig, ConfigDict, Extra, get_config
-from .error_wrappers import ValidationError
-from .errors import DataclassTypeError
-from .fields import Field, FieldInfo, Required, Undefined
-from .main import create_model, validate_model
-from .utils import ClassAttribute
+from pydantic.v1.class_validators import gather_all_validators
+from pydantic.v1.config import BaseConfig, ConfigDict, Extra, get_config
+from pydantic.v1.error_wrappers import ValidationError
+from pydantic.v1.errors import DataclassTypeError
+from pydantic.v1.fields import Field, FieldInfo, Required, Undefined
+from pydantic.v1.main import create_model, validate_model
+from pydantic.v1.utils import ClassAttribute
 
 if TYPE_CHECKING:
-    from .main import BaseModel
-    from .typing import CallableGenerator, NoArgAnyCallable
+    from pydantic.v1.main import BaseModel
+    from pydantic.v1.typing import CallableGenerator, NoArgAnyCallable
 
     DataclassT = TypeVar('DataclassT', bound='Dataclass')
 
@@ -409,6 +416,17 @@ def create_pydantic_model_from_dataclass(
     return model
 
 
+if sys.version_info >= (3, 8):
+
+    def _is_field_cached_property(obj: 'Dataclass', k: str) -> bool:
+        return isinstance(getattr(type(obj), k, None), cached_property)
+
+else:
+
+    def _is_field_cached_property(obj: 'Dataclass', k: str) -> bool:
+        return False
+
+
 def _dataclass_validate_values(self: 'Dataclass') -> None:
     # validation errors can occur if this function is called twice on an already initialised dataclass.
     # for example if Extra.forbid is enabled, it would consider __pydantic_initialised__ an invalid extra property
@@ -417,9 +435,13 @@ def _dataclass_validate_values(self: 'Dataclass') -> None:
     if getattr(self, '__pydantic_has_field_info_default__', False):
         # We need to remove `FieldInfo` values since they are not valid as input
         # It's ok to do that because they are obviously the default values!
-        input_data = {k: v for k, v in self.__dict__.items() if not isinstance(v, FieldInfo)}
+        input_data = {
+            k: v
+            for k, v in self.__dict__.items()
+            if not (isinstance(v, FieldInfo) or _is_field_cached_property(self, k))
+        }
     else:
-        input_data = self.__dict__
+        input_data = {k: v for k, v in self.__dict__.items() if not _is_field_cached_property(self, k)}
     d, _, validation_error = validate_model(self.__pydantic_model__, input_data, cls=self.__class__)
     if validation_error:
         raise validation_error

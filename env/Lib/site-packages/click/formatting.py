@@ -1,16 +1,18 @@
-import typing as t
+from __future__ import annotations
+
+import collections.abc as cabc
 from contextlib import contextmanager
 from gettext import gettext as _
 
 from ._compat import term_len
-from .parser import split_opt
+from .parser import _split_opt
 
 # Can force a width.  This is used by the test system
-FORCED_WIDTH: t.Optional[int] = None
+FORCED_WIDTH: int | None = None
 
 
-def measure_table(rows: t.Iterable[t.Tuple[str, str]]) -> t.Tuple[int, ...]:
-    widths: t.Dict[int, int] = {}
+def measure_table(rows: cabc.Iterable[tuple[str, str]]) -> tuple[int, ...]:
+    widths: dict[int, int] = {}
 
     for row in rows:
         for idx, col in enumerate(row):
@@ -20,8 +22,8 @@ def measure_table(rows: t.Iterable[t.Tuple[str, str]]) -> t.Tuple[int, ...]:
 
 
 def iter_rows(
-    rows: t.Iterable[t.Tuple[str, str]], col_count: int
-) -> t.Iterator[t.Tuple[str, ...]]:
+    rows: cabc.Iterable[tuple[str, str]], col_count: int
+) -> cabc.Iterator[tuple[str, ...]]:
     for row in rows:
         yield row + ("",) * (col_count - len(row))
 
@@ -50,6 +52,12 @@ def wrap_text(
                               each consecutive line.
     :param preserve_paragraphs: if this flag is set then the wrapping will
                                 intelligently handle paragraphs.
+
+    .. versionchanged:: 8.4.0
+        Width is measured in visible characters. ANSI escape sequences in
+        ``text``, ``initial_indent``, or ``subsequent_indent`` no longer
+        count toward the width budget, so styled input wraps based on what
+        the user sees instead of raw byte length.
     """
     from ._textwrap import TextWrapper
 
@@ -63,8 +71,8 @@ def wrap_text(
     if not preserve_paragraphs:
         return wrapper.fill(text)
 
-    p: t.List[t.Tuple[int, bool, str]] = []
-    buf: t.List[str] = []
+    p: list[tuple[int, bool, str]] = []
+    buf: list[str] = []
     indent = None
 
     def _flush_par() -> None:
@@ -111,24 +119,29 @@ class HelpFormatter:
                   width clamped to a maximum of 78.
     """
 
+    indent_increment: int
+    width: int
+    current_indent: int
+    buffer: list[str]
+
     def __init__(
         self,
         indent_increment: int = 2,
-        width: t.Optional[int] = None,
-        max_width: t.Optional[int] = None,
+        width: int | None = None,
+        max_width: int | None = None,
     ) -> None:
-        import shutil
-
         self.indent_increment = indent_increment
         if max_width is None:
             max_width = 80
         if width is None:
+            import shutil
+
             width = FORCED_WIDTH
             if width is None:
                 width = max(min(shutil.get_terminal_size().columns, max_width) - 2, 50)
         self.width = width
         self.current_indent = 0
-        self.buffer: t.List[str] = []
+        self.buffer = []
 
     def write(self, string: str) -> None:
         """Writes a unicode string into the internal buffer."""
@@ -142,9 +155,7 @@ class HelpFormatter:
         """Decreases the indentation."""
         self.current_indent -= self.indent_increment
 
-    def write_usage(
-        self, prog: str, args: str = "", prefix: t.Optional[str] = None
-    ) -> None:
+    def write_usage(self, prog: str, args: str = "", prefix: str | None = None) -> None:
         """Writes a usage line into the buffer.
 
         :param prog: the program name.
@@ -153,10 +164,18 @@ class HelpFormatter:
             ``"Usage: "``.
         """
         if prefix is None:
-            prefix = f"{_('Usage:')} "
+            prefix = "{usage} ".format(usage=_("Usage:"))
 
         usage_prefix = f"{prefix:>{self.current_indent}}{prog} "
         text_width = self.width - self.current_indent
+
+        if not args:
+            # Without args, the prefix's trailing space and the wrap_text
+            # call that would normally place args on the line are both
+            # unnecessary. Emit just the prefix line.
+            self.write(usage_prefix.rstrip(" "))
+            self.write("\n")
+            return
 
         if text_width >= (term_len(usage_prefix) + 20):
             # The arguments will fit to the right of the prefix.
@@ -209,7 +228,7 @@ class HelpFormatter:
 
     def write_dl(
         self,
-        rows: t.Sequence[t.Tuple[str, str]],
+        rows: cabc.Iterable[tuple[str, str]],
         col_max: int = 30,
         col_spacing: int = 2,
     ) -> None:
@@ -252,7 +271,7 @@ class HelpFormatter:
                 self.write("\n")
 
     @contextmanager
-    def section(self, name: str) -> t.Iterator[None]:
+    def section(self, name: str) -> cabc.Generator[None]:
         """Helpful context manager that writes a paragraph, a heading,
         and the indents.
 
@@ -267,7 +286,7 @@ class HelpFormatter:
             self.dedent()
 
     @contextmanager
-    def indentation(self) -> t.Iterator[None]:
+    def indentation(self) -> cabc.Generator[None]:
         """A context manager that increases the indentation."""
         self.indent()
         try:
@@ -280,7 +299,7 @@ class HelpFormatter:
         return "".join(self.buffer)
 
 
-def join_options(options: t.Sequence[str]) -> t.Tuple[str, bool]:
+def join_options(options: cabc.Iterable[str]) -> tuple[str, bool]:
     """Given a list of option strings this joins them in the most appropriate
     way and returns them in the form ``(formatted_string,
     any_prefix_is_slash)`` where the second item in the tuple is a flag that
@@ -290,7 +309,7 @@ def join_options(options: t.Sequence[str]) -> t.Tuple[str, bool]:
     any_prefix_is_slash = False
 
     for opt in options:
-        prefix = split_opt(opt)[0]
+        prefix = _split_opt(opt)[0]
 
         if prefix == "/":
             any_prefix_is_slash = True
