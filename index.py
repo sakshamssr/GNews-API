@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
-from.GNews_scrape import scrape
+from GNews_scrape import scrape
 
 app = FastAPI()
 
